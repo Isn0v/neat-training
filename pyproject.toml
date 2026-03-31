@@ -1,0 +1,14 @@
+[project]
+name = "diploma-research"
+version = "0.1.0"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium[box2d]>=1.2.2",
+    "matplotlib>=3.10.8",
+    "neat-python>=2.0.0",
+    "numpy>=2.3.5",
+    "pygame-ce>=2.5.7",
+    "swig>=4.4.1",
+    "torch>=2.10.0",
+]

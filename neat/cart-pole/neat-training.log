@@ -1,0 +1,68 @@
+Начинаем эволюцию...
+
+ ****** Running generation 0 ****** 
+
+Population's average fitness: 25.50000 stdev: 49.26591
+Best fitness: 314.00000 - size: (2, 8) - species 1 - id 2
+Average adjusted fitness: 0.057
+Mean genetic distance 1.199, standard deviation 0.327
+Population of 50 members in 1 species (after reproduction):
+   ID   age  size   fitness   adj fit  stag
+  ====  ===  ====  =========  =======  ====
+     1    0    50    314.000    0.057     0
+Total extinctions: 0
+Generation time: 0.033 sec
+
+ ****** Running generation 1 ****** 
+
+Population's average fitness: 39.22000 stdev: 57.39069
+Best fitness: 303.00000 - size: (2, 8) - species 1 - id 2
+Average adjusted fitness: 0.106
+Mean genetic distance 1.327, standard deviation 0.338
+Population of 50 members in 1 species (after reproduction):
+   ID   age  size   fitness   adj fit  stag
+  ====  ===  ====  =========  =======  ====
+     1    1    50    303.000    0.106     1
+Total extinctions: 0
+Generation time: 0.041 sec (0.037 average)
+
+ ****** Running generation 2 ****** 
+
+Population's average fitness: 54.76000 stdev: 74.74558
+Best fitness: 345.00000 - size: (2, 7) - species 1 - id 144
+Average adjusted fitness: 0.139
+Mean genetic distance 1.286, standard deviation 0.312
+Population of 50 members in 1 species (after reproduction):
+   ID   age  size   fitness   adj fit  stag
+  ====  ===  ====  =========  =======  ====
+     1    2    50    345.000    0.139     0
+Total extinctions: 0
+Generation time: 0.064 sec (0.046 average)
+
+ ****** Running generation 3 ****** 
+
+Population's average fitness: 91.48000 stdev: 119.46652
+Best fitness: 500.00000 - size: (3, 6) - species 1 - id 160
+
+Best individual in generation 3 meets fitness threshold - complexity: (3, 6)
+
+Эволюция завершена! Лучший геном: Key: 160
+Fitness: 500.0
+Nodes:
+	0 DefaultNodeGene(key=0, bias=0.16517196328603645, response=1.0, activation=relu, aggregation=sum, time_constant=1.0)
+	1 DefaultNodeGene(key=1, bias=0.13200593403701494, response=1.0, activation=relu, aggregation=sum, time_constant=1.0)
+	24 DefaultNodeGene(key=24, bias=0.0, response=1.0, activation=relu, aggregation=sum, time_constant=1.0)
+Connections:
+	DefaultConnectionGene(key=(-4, 0), innovation=7, weight=-0.95859674321428, enabled=True)
+	DefaultConnectionGene(key=(-4, 1), innovation=8, weight=1.246678053880893, enabled=True)
+	DefaultConnectionGene(key=(-3, 0), innovation=5, weight=0.015617498717232947, enabled=False)
+	DefaultConnectionGene(key=(-3, 1), innovation=6, weight=1.4899097741580007, enabled=True)
+	DefaultConnectionGene(key=(-2, 0), innovation=3, weight=-0.801652991602287, enabled=True)
+	DefaultConnectionGene(key=(-2, 1), innovation=4, weight=0.4214986080387706, enabled=True)
+	DefaultConnectionGene(key=(-1, 0), innovation=1, weight=1.1868178134719505, enabled=False)
+	DefaultConnectionGene(key=(-1, 1), innovation=2, weight=1.0338796063808662, enabled=False)
+	DefaultConnectionGene(key=(-1, 24), innovation=55, weight=0.4064340102934738, enabled=True)
+
+[INFO] Лучшая модель успешно сохранена в файл: neat/cart-pole/results/best_agent.pkl
+
+Запускаем демонстрацию лучшего агента...

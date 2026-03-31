@@ -1,0 +1,1000 @@
+давай сделаем neat нейросеть для lunar lander
+
+Отличная задача! **Lunar Lander** (Лунный модуль) — это уже серьезное испытание. В отличие от тележки с шестом, здесь гораздо сложнее физика (гравитация, инерция), больше кнопок управления и хитрая система штрафов за трату топлива и жесткие посадки.
+
+### Важная подготовка
+Для этой среды Gymnasium использует физический движок **Box2D**. Его нужно установить отдельно. Выполни в консоли:
+```bash
+pip install "gymnasium[box2d]" neat-python numpy
+```
+
+### Что изменится по сравнению с CartPole?
+1. **Входы (Inputs): 8 штук.** (Координаты X/Y, скорости X/Y, угол наклона, угловая скорость, касание левой ногой, касание правой ногой).
+2. **Выходы (Outputs): 4 штуки.** (0 — ничего не делать, 1 — левый двигатель, 2 — главный нижний двигатель, 3 — правый двигатель).
+3. **Условие победы:** Среда считается решенной, если агент набирает **200 очков**.
+4. **Сложность:** Задача сложная, поэтому мы увеличим популяцию с 50 до **150 агентов**, а функцию активации сменим с ReLU на **Tanh** (она лучше работает с отрицательными скоростями и координатами).
+
+---
+
+### Полный код (NEAT + Lunar Lander)
+
+```python
+import gymnasium as gym
+import neat
+import numpy as np
+import pickle
+
+# 1. Конфигурация специально под Lunar Lander
+CONFIG_TEXT = """
+[NEAT]
+fitness_criterion      = max
+fitness_threshold      = 200
+pop_size               = 150
+reset_on_extinction    = False
+no_fitness_termination = False
+
+[DefaultGenome]
+single_structural_mutation = False
+structural_mutation_surer  = default
+
+# 8 входов (сенсоры радара и гироскопа), 4 выхода (двигатели)
+num_inputs              = 8
+num_outputs             = 4
+num_hidden              = 0
+initial_connection      = full_direct
+feed_forward            = True
+
+# Для управления кораблем лучше подходит tanh (выдает от -1 до 1)
+activation_default      = tanh
+activation_mutate_rate  = 0.1
+activation_options      = tanh relu sigmoid
+
+aggregation_default     = sum
+aggregation_mutate_rate = 0.0
+aggregation_options     = sum
+
+bias_init_type          = gaussian
+bias_init_mean          = 0.0
+bias_init_stdev         = 1.0
+bias_max_value          = 30.0
+bias_min_value          = -30.0
+bias_mutate_power       = 0.5
+bias_mutate_rate        = 0.7
+bias_replace_rate       = 0.1
+
+weight_init_type        = gaussian
+weight_init_mean        = 0.0
+weight_init_stdev       = 1.0
+weight_max_value        = 30.0
+weight_min_value        = -30.0
+weight_mutate_power     = 0.5
+weight_mutate_rate      = 0.8
+weight_replace_rate     = 0.1
+
+response_init_type      = gaussian
+response_init_mean      = 1.0
+response_init_stdev     = 0.0
+response_max_value      = 30.0
+response_min_value      = -30.0
+response_mutate_power   = 0.0
+response_mutate_rate    = 0.0
+response_replace_rate   = 0.0
+
+enabled_default         = True
+enabled_mutate_rate     = 0.05
+enabled_rate_to_true_add = 0.0
+enabled_rate_to_false_add = 0.0
+
+conn_add_prob           = 0.5
+conn_delete_prob        = 0.5
+node_add_prob           = 0.2
+node_delete_prob        = 0.2
+
+compatibility_disjoint_coefficient = 1.0
+compatibility_weight_coefficient   = 0.5
+
+[DefaultSpeciesSet]
+compatibility_threshold = 3.0
+
+[DefaultStagnation]
+species_fitness_func = max
+# Даем видам больше времени на развитие, задача сложная
+max_stagnation       = 30
+species_elitism      = 3
+
+[DefaultReproduction]
+elitism            = 2
+survival_threshold = 0.2
+min_species_size   = 1
+"""
+
+def create_config_file(filename="config-lunar.txt"):
+    with open(filename, "w") as f:
+        f.write(CONFIG_TEXT)
+    return filename
+
+def eval_genomes(genomes, config):
+    # Создаем среду. Версия v3 актуальна для новых версий Gymnasium
+    env = gym.make('LunarLander-v3')
+    
+    for genome_id, genome in genomes:
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        
+        state, info = env.reset()
+        fitness = 0.0
+        done = False
+        truncated = False
+        
+        while not (done or truncated):
+            # Нейросеть выдает 4 числа
+            output = net.activate(state)
+            
+            # Выбираем двигатель, у которого уверенность (число) больше всего
+            action = np.argmax(output) 
+            
+            state, reward, done, truncated, info = env.step(action)
+            fitness += reward
+            
+        genome.fitness = fitness
+        
+    env.close()
+
+def run_neat():
+    config_path = create_config_file()
+    
+    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         config_path)
+
+    p = neat.Population(config)
+
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+
+    print("Начинаем тренировку пилотов...")
+    # Ставим максимум 200 поколений. Но обычно решает за 50-100.
+    winner = p.run(eval_genomes, 200)
+
+    print(f'\nОбучение завершено! Лучший геном:\n{winner}')
+
+    # Сохраняем мозг лучшего пилота в файл, чтобы не обучать заново каждый раз
+    with open("best_lunar_pilot.pkl", "wb") as f:
+        pickle.dump(winner, f)
+
+    # Демонстрация
+    print("\nЗапускаем демонстрацию лучшего пилота...")
+    env_eval = gym.make('LunarLander-v3', render_mode='human')
+    winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
+    
+    # Покажем 3 посадки подряд
+    for _ in range(3):
+        state, info = env_eval.reset()
+        done = False
+        truncated = False
+        total_reward = 0
+        
+        while not (done or truncated):
+            output = winner_net.activate(state)
+            action = np.argmax(output)
+            state, reward, done, truncated, info = env_eval.step(action)
+            total_reward += reward
+            
+        print(f"Результат посадки: {total_reward:.1f} очков")
+        
+    env_eval.close()
+
+if __name__ == '__main__':
+    run_neat()
+```
+
+### Чего ожидать при запуске?
+1. **Это займет время.** CartPole решался за 10-20 секунд. Lunar Lander может обучаться от 5 до 30 минут (зависит от мощности процессора). Каждое поколение играет 150 игр.
+2. **Смешные фазы эволюции.** Если смотреть на очки в консоли, ты заметишь этапы взросления агента:
+   * *Поколения 0-10 (Очки: -200...-500):* Корабли тупо падают камнем вниз или врубают боковые двигатели и улетают за экран.
+   * *Поколения 10-30 (Очки: -50...-100):* Сеть понимает, что если врубить нижний двигатель и зависнуть в воздухе, то не разобьешься. Они начинают бесконечно висеть в небе (зависание тратит очки топлива, поэтому очки все еще отрицательные).
+   * *Поколения 30-60 (Очки: 50...100):* Они начинают пытаться сесть, но роняют корабль на бок.
+   * *Поколения 60+ (Очки: 200+):* Идеальные, мягкие посадки точно в цель.
+
+*P.S. Я добавил в код модуль `pickle`. Когда эволюция закончится, лучший мозг сохранится в файл `best_lunar_pilot.pkl`. В будущем ты сможешь просто загружать его и смотреть, как он сажает корабль, без переобучения.*
+
+
+Population's average fitness: -246.42293 stdev: 195.94602
+Best fitness: 213.47216 - size: (4, 29) - species 1 - id 309
+У меня возникла вот такая ситуация. Похожк, что лишь один раз он по счастливому совпадения приземлился куда надо. Надо, чтобы это не было совпадением
+
+Абсолютно верное наблюдение! Ты столкнулся с классической проблемой обучения с подкреплением — **"Случайная удача" (Lucky Fluke)**.
+
+В `LunarLander` каждый раз, когда мы вызываем `env.reset()`, корабль появляется на разной высоте, с разным углом наклона и с разной начальной скоростью (его как бы "подбрасывает" в случайную сторону). 
+Один из твоих мутантов просто идеально заспавнился прямо над посадочной площадкой без боковой скорости. Он просто жал кнопку "газ вниз" и случайно сел, получив 213 очков. Алгоритм NEAT поверил, что этот мутант гений, и остановил обучение.
+
+### Как это исправить?
+Чтобы доказать, что пилот реально умеет летать, а не просто везунчик, **каждому геному нужно сдать экзамен несколько раз** (например, посадить корабль в 3 или 5 разных случайных условиях). Итоговой оценкой будет **среднее арифметическое** за все попытки.
+
+Вот как нужно изменить функцию `eval_genomes` (просто замени этот блок в своем коде):
+
+```python
+def eval_genomes(genomes, config):
+    env = gym.make('LunarLander-v3')
+    
+    # СКОЛЬКО РАЗ ТЕСТИРУЕМ КАЖДОГО ПИЛОТА
+    episodes_per_genome = 3 
+    
+    for genome_id, genome in genomes:
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        total_fitness = 0.0
+        
+        # Запускаем серию посадок для одного и того же мозга
+        for _ in range(episodes_per_genome):
+            state, info = env.reset() # Каждый раз новая случайная генерация старта
+            episode_fitness = 0.0
+            done = False
+            truncated = False
+            
+            while not (done or truncated):
+                output = net.activate(state)
+                action = np.argmax(output) 
+                state, reward, done, truncated, info = env.step(action)
+                episode_fitness += reward
+                
+            total_fitness += episode_fitness
+            
+        # Записываем средний результат за все попытки
+        genome.fitness = total_fitness / episodes_per_genome
+        
+    env.close()
+```
+
+### Что изменится теперь:
+1. Пилот больше не сможет пройти тест за счет удачного старта. Если в первый раз он сел (200 очков), а во второй и третий разбился (-100 и -100), то его средний балл будет `0`. Он не достигнет порога в 200 очков и эволюция продолжится.
+2. Итоговая нейросеть будет **железобетонной**. Она научится выравнивать корабль из любого штопора.
+3. **Минус:** Обучение замедлится в 3 раза, так как вместо 150 игр за поколение, компьютеру теперь нужно отыграть 450 игр.
+
+---
+
+### 💡 Про-совет: Как ускорить обучение в несколько раз
+
+Так как игр стало много, Python может начать тормозить, считая их по очереди. `neat-python` умеет использовать **все ядра твоего процессора** одновременно!
+
+Чтобы включить турбо-режим (мультипроцессинг), в основном цикле `run_neat` нужно заменить обычный запуск на `ParallelEvaluator`.
+
+Вот как должен выглядеть конец твоего файла (функция `run_neat`):
+
+```python
+def eval_dummy(genome, config):
+    # Эта функция нужна для многопоточности, 
+    # ParallelEvaluator будет вызывать её для каждого генома отдельно
+    env = gym.make('LunarLander-v3')
+    episodes_per_genome = 3
+    net = neat.nn.FeedForwardNetwork.create(genome, config)
+    total_fitness = 0.0
+    
+    for _ in range(episodes_per_genome):
+        state, info = env.reset()
+        episode_fitness = 0.0
+        done = False
+        truncated = False
+        while not (done or truncated):
+            output = net.activate(state)
+            action = np.argmax(output) 
+            state, reward, done, truncated, info = env.step(action)
+            episode_fitness += reward
+        total_fitness += episode_fitness
+    env.close()
+    return total_fitness / episodes_per_genome
+
+
+def run_neat():
+    config_path = create_config_file()
+    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         config_path)
+    p = neat.Population(config)
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+
+    print("Начинаем тренировку пилотов (Используем все ядра CPU)...")
+    
+    # ВАЖНО: 4 - это количество потоков. 
+    # Если у тебя 8-ядерный процессор, можешь поставить 8.
+    pe = neat.ParallelEvaluator(4, eval_dummy)
+    
+    # Запускаем эволюцию через ParallelEvaluator
+    winner = p.run(pe.evaluate, 200)
+
+    print(f'\nОбучение завершено! Лучший геном:\n{winner}')
+    
+    # Дальше код демонстрации (env_eval), он остается без изменений
+    # ...
+```
+
+С такой многопоточностью и проверкой по 3 попыткам на агента, ты получишь идеальную посадку, и ждать придется совсем не долго!
+
+не получается обучать. полчил примерно такой резуотат. как думаешь, что сделать  ****** Running generation 191 ******
+
+Population's average fitness: -275.73214 stdev: 252.10026
+Best fitness: 29.22869 - size: (4, 4) - species 11 - id 27312
+Average adjusted fitness: 0.783
+Mean genetic distance 2.786, standard deviation 0.522
+Population of 150 members in 5 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   74    44     25.444    0.759     0
+10   42    34    -45.274    0.822     5
+11   41    25     29.229    0.866     2
+12    2    23    -49.933    0.685     0
+13    0    24         --       --     0
+Total extinctions: 0
+Generation time: 2.084 sec (2.077 average)
+
+****** Running generation 192 ******
+
+Population's average fitness: -235.49977 stdev: 245.84672
+Best fitness: -19.35331 - size: (8, 9) - species 8 - id 27437
+Average adjusted fitness: 0.839
+Mean genetic distance 2.813, standard deviation 0.611
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   75    19    -19.353    0.843     1
+10   43     7    -61.603    0.854     6
+11   42    15    -50.227    0.884     3
+12    3    45    -45.402    0.723     0
+13    1    62    -47.957    0.891     0
+14    0     2         --       --     0
+Total extinctions: 0
+Generation time: 2.113 sec (2.091 average)
+
+****** Running generation 193 ******
+
+Population's average fitness: -230.26596 stdev: 228.84975
+Best fitness: -24.77597 - size: (5, 6) - species 13 - id 27555
+Average adjusted fitness: 0.869
+Mean genetic distance 2.764, standard deviation 0.662
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   76    36    -37.446    0.784     2
+10   44    16   -115.436    0.876     7
+11   43    35    -35.528    0.944     4
+12    4    21    -55.720    0.883     1
+13    2    30    -24.776    0.910     0
+14    1    12   -139.677    0.818     0
+Total extinctions: 0
+Generation time: 2.183 sec (2.102 average)
+
+****** Running generation 194 ******
+
+Population's average fitness: -269.71164 stdev: 267.18967
+Best fitness: -22.30858 - size: (4, 2) - species 11 - id 27744
+Average adjusted fitness: 0.831
+Mean genetic distance 2.778, standard deviation 0.648
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   77    20    -50.727    0.825     3
+10   45    24    -50.084    0.882     8
+11   44    17    -22.309    0.860     5
+12    5    30    -54.189    0.691     2
+13    3    30    -35.611    0.918     1
+14    2    29   -107.085    0.809     0
+Total extinctions: 0
+Generation time: 2.190 sec (2.102 average)
+
+****** Running generation 195 ******
+
+Population's average fitness: -221.36069 stdev: 221.62038
+Best fitness: -30.58425 - size: (4, 3) - species 14 - id 27412
+Average adjusted fitness: 0.853
+Mean genetic distance 2.677, standard deviation 0.608
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   78    15    -35.616    0.833     4
+10   46    24    -59.178    0.898     9
+11   45    23    -85.516    0.827     6
+12    6    37    -49.081    0.859     3
+13    4    28    -32.869    0.843     2
+14    3    23    -30.584    0.855     0
+Total extinctions: 0
+Generation time: 1.960 sec (2.079 average)
+
+****** Running generation 196 ******
+
+Population's average fitness: -211.32746 stdev: 190.42215
+Best fitness: -34.97312 - size: (4, 1) - species 11 - id 27927
+Average adjusted fitness: 0.812
+Mean genetic distance 2.603, standard deviation 0.643
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   79    28    -61.029    0.825     5
+10   47    21    -80.603    0.846    10
+11   46    17    -34.973    0.868     7
+12    7    22    -65.790    0.748     4
+13    5    49    -39.204    0.736     3
+14    4    13    -56.368    0.850     1
+Total extinctions: 0
+Generation time: 1.986 sec (2.071 average)
+
+****** Running generation 197 ******
+
+Population's average fitness: -226.67687 stdev: 221.29851
+Best fitness: -20.04649 - size: (4, 1) - species 13 - id 28042
+Average adjusted fitness: 0.823
+Mean genetic distance 2.536, standard deviation 0.625
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   80    21    -54.936    0.802     6
+10   48    39    -89.101    0.885    11
+11   47    11    -61.333    0.908     8
+12    8    31    -75.900    0.702     5
+13    6    27    -20.046    0.832     0
+14    5    21    -70.855    0.808     2
+Total extinctions: 0
+Generation time: 2.099 sec (2.075 average)
+
+****** Running generation 198 ******
+
+Population's average fitness: -205.86445 stdev: 201.47320
+Best fitness: -19.91277 - size: (4, 3) - species 12 - id 28103
+Average adjusted fitness: 0.883
+Mean genetic distance 2.578, standard deviation 0.588
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   81    20    -52.799    0.857     7
+10   49    11    -53.650    0.906    12
+11   48    18    -91.104    0.914     9
+12    9    34    -19.913    0.888     0
+13    7    38    -59.019    0.835     1
+14    6    29    -58.946    0.899     3
+Total extinctions: 0
+Generation time: 1.982 sec (2.066 average)
+
+****** Running generation 199 ******
+
+Population's average fitness: -212.94841 stdev: 193.54898
+Best fitness: -29.43918 - size: (4, 2) - species 11 - id 28352
+Average adjusted fitness: 0.832
+Mean genetic distance 2.547, standard deviation 0.684
+Population of 150 members in 6 species (after reproduction):
+ID   age  size   fitness   adj fit  stag
+====  ===  ====  =========  =======  ====
+8   82    21    -55.230    0.691     8
+10   50    34   -119.420    0.870    13
+11   49    19    -29.439    0.858    10
+12   10    29    -65.079    0.830     1
+13    8    17    -30.379    0.851     2
+14    7    30    -33.274    0.894     4
+Total extinctions: 0
+Generation time: 1.968 sec (2.063 average)
+
+Обучение завершено! Лучший геном:
+Key: 28352
+Fitness: -29.43918167367025
+Nodes:
+0 DefaultNodeGene(key=0, bias=3.7607115227027674, response=1.0, activation=tanh, aggregation=sum)
+1 DefaultNodeGene(key=1, bias=-1.88358692790788, response=1.0, activation=tanh, aggregation=sum)
+2 DefaultNodeGene(key=2, bias=1.059185215934026, response=1.0, activation=tanh, aggregation=sum)
+3 DefaultNodeGene(key=3, bias=-0.785545528898457, response=1.0, activation=tanh, aggregation=sum)
+Connections:
+DefaultConnectionGene(key=(-4, 2), innovation=11099, weight=-1.9558662762477386, enabled=True)
+DefaultConnectionGene(key=(-3, 3), innovation=18591, weight=0.9988558893150025, enabled=True)
+
+Запускаем демонстрацию лучшего пилота...
+Результат посадки: -78.8 очков
+Результат посадки: -82.5 очков
+Результат посадки: 1.0 очков
+
+Я вижу проблему! И твой лог — это просто хрестоматийный пример того, как эволюция находит **«локальный оптимум» (эволюционную ловушку)**.
+
+Посмотри на структуру мозга лучшего пилота в самом конце лога:
+```text
+Connections:
+        DefaultConnectionGene(key=(-4, 2)...
+        DefaultConnectionGene(key=(-3, 3)...
+```
+**У него всего 2 связи во всём мозге!** У корабля 8 сенсоров и 4 двигателя. Чтобы мозг работал, там должны быть десятки связей. Твой пилот абсолютно слепой и парализованный.
+
+### Что произошло? (Почему эволюция сделала его тупым)
+Если при рождении дать кораблю случайные веса в мозге, он начинает хаотично палить изо всех двигателей. Корабль начинает бешено крутиться, улетает за экран или разбивается вверх ногами. За это игра дает **штраф -300 или -400 очков**.
+Но если корабль **вообще ничего не делает**, он просто камнем падает вниз. За это игра дает **штраф -80 очков**.
+
+Эволюция посмотрела на это и решила: *"Ага! Пытаться лететь — это больно (-400). Ничего не делать — это нормально (-80). Значит, выживают те, кто ничего не делает!"* 
+Из-за того, что у тебя стояла вероятность удаления связей (`conn_delete_prob = 0.5`), агенты за 200 поколений просто **удалили себе весь мозг (лоботомировали себя)**, чтобы случайно не нажать кнопку газа. И застряли на оценке от -20 до -80.
+
+---
+
+### Как это исправить?
+
+Нам нужно запретить им удалять себе мозг, снизить силу мутаций (чтобы они не ломали хорошие веса) и дать им базовый "гиппокамп" (скрытые нейроны) прямо с рождения, потому что задача сложная.
+
+Замени в своем конфиге секцию `[DefaultGenome]` на эту (я внес точечные правки в вероятности):
+
+```python
+[DefaultGenome]
+single_structural_mutation = False
+structural_mutation_surer  = default
+
+num_inputs              = 8
+num_outputs             = 4
+# ДАЕМ 4 СКРЫТЫХ НЕЙРОНА ПРИ РОЖДЕНИИ (Базовый интеллект)
+num_hidden              = 4
+initial_connection      = full_direct
+feed_forward            = True
+
+activation_default      = tanh
+activation_mutate_rate  = 0.05
+activation_options      = tanh
+
+aggregation_default     = sum
+aggregation_mutate_rate = 0.0
+aggregation_options     = sum
+
+bias_init_type          = gaussian
+bias_init_mean          = 0.0
+bias_init_stdev         = 1.0
+bias_max_value          = 30.0
+bias_min_value          = -30.0
+bias_mutate_power       = 0.2   # Уменьшили силу мутации смещения
+bias_mutate_rate        = 0.7
+bias_replace_rate       = 0.05  # Уменьшили шанс полной замены
+
+weight_init_type        = gaussian
+weight_init_mean        = 0.0
+weight_init_stdev       = 1.0
+weight_max_value        = 30.0
+weight_min_value        = -30.0
+weight_mutate_power     = 0.2   # Уменьшили силу мутации (теперь они точнее подбирают веса)
+weight_mutate_rate      = 0.8
+weight_replace_rate     = 0.05  # Реже полностью забывают старый опыт
+
+response_init_type      = gaussian
+response_init_mean      = 1.0
+response_init_stdev     = 0.0
+response_max_value      = 30.0
+response_min_value      = -30.0
+response_mutate_power   = 0.0
+response_mutate_rate    = 0.0
+response_replace_rate   = 0.0
+
+enabled_default         = True
+enabled_mutate_rate     = 0.01  # Реже отключают связи
+
+# ИСПРАВЛЕНИЕ ЛОБОТОМИИ:
+conn_add_prob           = 0.3   # Чаще добавляют извилины
+conn_delete_prob        = 0.05  # ПОЧТИ ПЕРЕСТАЮТ ИХ УДАЛЯТЬ
+node_add_prob           = 0.1
+node_delete_prob        = 0.01  # Почти перестают удалять нейроны
+
+compatibility_disjoint_coefficient = 1.0
+compatibility_weight_coefficient   = 0.5
+```
+
+### Что изменится теперь:
+1. **`num_hidden = 4`** — теперь они рождаются не с прямым подключением (глаза -> педали), а с 4 дополнительными нейронами в центре. Это позволяет им осознавать сложные концепции вроде "если я падаю быстро И наклонен вправо -> врубить левый двигатель".
+2. **`weight_mutate_power = 0.2`** (было 0.5) — раньше, если агент находил правильный вес двигателя, следующая же мутация сильно его сбивала, и он разбивался. Теперь мутации стали "аккуратнее", происходит тонкая настройка.
+3. **`conn_delete_prob = 0.05`** (было 0.5) — мы запретили им отуплять себя. Теперь они вынуждены учиться управлять кораблем.
+
+Запусти обучение с этим конфигом. Очки поначалу просядут (они снова начнут падать с кручением), но где-то к 30-50 поколению ты увидишь резкий скачок `Best fitness` в положительную зону (0, потом 100, потом 200+).
+
+RuntimeError: Error interpreting config item 'conn_add_prob' with value '0.3   # Чаще добавляют извилины' and type <class 'float'>
+
+Прошу прощения! Это моя вина. Библиотека `neat-python` (а точнее парсер конфигов внутри неё) **не умеет читать комментарии, если они стоят на той же строчке, что и цифры**. Он попытался превратить текст `"0.3 # Чаще добавляют извилины"` в дробное число и выдал ошибку.
+
+Комментарии в конфиге NEAT должны быть только на отдельных строках.
+
+Вот **исправленный и очищенный от строчных комментариев** блок `[DefaultGenome]`. Просто скопируй его и замени в своем коде:
+
+```python
+[DefaultGenome]
+single_structural_mutation = False
+structural_mutation_surer  = default
+
+num_inputs              = 8
+num_outputs             = 4
+num_hidden              = 4
+initial_connection      = full_direct
+feed_forward            = True
+
+activation_default      = tanh
+activation_mutate_rate  = 0.05
+activation_options      = tanh
+
+aggregation_default     = sum
+aggregation_mutate_rate = 0.0
+aggregation_options     = sum
+
+bias_init_type          = gaussian
+bias_init_mean          = 0.0
+bias_init_stdev         = 1.0
+bias_max_value          = 30.0
+bias_min_value          = -30.0
+bias_mutate_power       = 0.2
+bias_mutate_rate        = 0.7
+bias_replace_rate       = 0.05
+
+weight_init_type        = gaussian
+weight_init_mean        = 0.0
+weight_init_stdev       = 1.0
+weight_max_value        = 30.0
+weight_min_value        = -30.0
+weight_mutate_power     = 0.2
+weight_mutate_rate      = 0.8
+weight_replace_rate     = 0.05
+
+response_init_type      = gaussian
+response_init_mean      = 1.0
+response_init_stdev     = 0.0
+response_max_value      = 30.0
+response_min_value      = -30.0
+response_mutate_power   = 0.0
+response_mutate_rate    = 0.0
+response_replace_rate   = 0.0
+
+enabled_default         = True
+enabled_mutate_rate     = 0.01
+enabled_rate_to_true_add = 0.0
+enabled_rate_to_false_add = 0.0
+
+conn_add_prob           = 0.3
+conn_delete_prob        = 0.05
+node_add_prob           = 0.1
+node_delete_prob        = 0.01
+
+compatibility_disjoint_coefficient = 1.0
+compatibility_weight_coefficient   = 0.5
+```
+
+Теперь парсер без проблем прочитает все значения как `float`. Запускай, должно поехать!
+
+добавил еще вот эти два значения
+enabled_rate_to_true_add = 0.0
+enabled_rate_to_false_add = 0.0. Что они значат
+
+Отличный вопрос! Чтобы понять эти параметры, нужно вспомнить, как NEAT работает со связями в мозге.
+
+В NEAT связи (синапсы) между нейронами можно не только создавать или удалять навсегда. Их можно временно **«выключать»** (переводить параметр `enabled` в `False`). 
+Это похоже на то, как в реальном мозге некоторые нейронные пути засыпают за ненадобностью, но физически остаются на месте. Сигнал по выключенной связи не идет.
+
+Параметры, которые ты добавил, управляют **однонаправленными (асимметричными) мутациями** этого выключателя:
+
+### 1. `enabled_rate_to_true_add = 0.0`
+Это вероятность того, что спящая (выключенная) связь при мутации у ребенка **принудительно проснется** и станет активной (`True`).
+
+### 2. `enabled_rate_to_false_add = 0.0`
+Это вероятность того, что активная связь принудительно **уснет** и перестанет передавать сигнал (`False`).
+
+---
+
+### А зачем они нужны, если уже есть `enabled_mutate_rate = 0.01`?
+
+Параметр `enabled_mutate_rate = 0.01` (из нашего конфига) работает как **симметричный переключатель**. Он говорит: *"С вероятностью 1% просто инвертируй текущее состояние. Было включено — выключи. Было выключено — включи"*.
+
+А параметры `rate_to_true_add` и `rate_to_false_add` позволяют задать алгоритму **перекос**. 
+Например, если бы мы поставили `enabled_rate_to_false_add = 0.2`, то каждое поколение 20% всех рабочих связей в мозге принудительно отключались бы. 
+
+### Почему для нашей задачи мы поставили их в `0.0`?
+Помнишь проблему, с которой мы боролись в прошлом сообщении? Твой пилот **сам себе сделал лоботомию**, отключив все связи, лишь бы корабль падал ровно и не тратил топливо.
+
+Установив эти два параметра в ноль (`0.0`), мы строго запрещаем алгоритму массово и целенаправленно «глушить» или «пробуждать» куски мозга. Мы оставили только честный, крошечный шанс в 1% (`enabled_mutate_rate = 0.01`), что случайная связь переключится. Это делает мутации более стабильными, и пилоты перестают "тупеть".
+
+хорошо. теперь я хочу чтобы он прекращал обучение когда условно три нейросети достигли значения в 200, а не одно
+
+Отличная идея! Это называется **робастностью популяции** — мы хотим убедиться, что алгоритм нашел не просто одну удачную мутацию, а целый класс хороших решений.
+
+В базовом `neat-python` нет готовой настройки в конфиге для такого (он умеет останавливаться только по одному лучшему агенту). Но мы можем очень элегантно обойти это, **написав свою функцию-обертку (wrapper)** и используя механизм исключений Python (Exceptions), чтобы дернуть "стоп-кран" эволюции.
+
+### Шаг 1: Измени настройку в конфигурации
+В блоке `[NEAT]` найди и измени один параметр:
+```python
+no_fitness_termination = True
+```
+*Зачем это нужно:* Это отключает стандартное правило библиотеки ("остановись, если кто-то один набрал 200"). Теперь мы сами будем решать, когда остановиться.
+
+### Шаг 2: Изменяем основной цикл `run_neat()`
+Мы напишем функцию `evaluate_and_check`, которая сначала будет просить процессор оценить всех агентов (как раньше), а потом сама пересчитает, сколько из них сдали экзамен на 200 очков.
+
+Замени свою функцию `run_neat()` на этот код:
+
+```python
+def run_neat():
+    config_path = create_config_file()
+    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         config_path)
+    
+    p = neat.Population(config)
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+
+    print("Начинаем тренировку пилотов (Ищем как минимум ТРОИХ победителей)...")
+    
+    # Создаем многопоточный оценщик
+    pe = neat.ParallelEvaluator(4, eval_dummy)
+    
+    # Сюда мы сохраним нашу тройку (или больше) победителей
+    champions_list = []
+
+    # Создаем функцию-обертку прямо внутри run_neat
+    def evaluate_and_check(genomes, config):
+        # 1. Запускаем стандартную многопоточную оценку. 
+        # После этой строки у каждого генома появится свой fitness
+        pe.evaluate(genomes, config)
+        
+        # 2. Считаем, сколько геномов набрали 200 очков или больше
+        current_champions = [g for genome_id, g in genomes if g.fitness is not None and g.fitness >= 200]
+        
+        # 3. Если их 3 или больше — прерываем эволюцию!
+        if len(current_champions) >= 3:
+            nonlocal champions_list
+            champions_list = current_champions
+            # Генерируем исключение, чтобы выпрыгнуть из цикла p.run()
+            raise StopIteration(f"Успех! Найдено {len(current_champions)} пилотов-профи.")
+
+    # Запускаем эволюцию, обернув её в блок try-except
+    try:
+        # Обрати внимание: передаем нашу новую функцию evaluate_and_check
+        p.run(evaluate_and_check, 200)
+    except StopIteration as e:
+        print(f"\n[Эволюция досрочно остановлена]: {e}")
+
+    # Подводим итоги
+    if champions_list:
+        # Сортируем победителей по количеству очков (от большего к меньшему)
+        champions_list.sort(key=lambda x: x.fitness, reverse=True)
+        winner = champions_list[0] # Берем самого лучшего из сдавших экзамен
+        print(f"\nЛучший из команды победителей набрал: {winner.fitness:.1f} очков!")
+    else:
+        print("\nЗа 200 поколений не удалось найти 3-х идеальных пилотов.")
+        winner = p.best_genome # Берем хотя бы того, кто есть
+
+    # Сохраняем мозг лучшего
+    with open("best_lunar_pilot.pkl", "wb") as f:
+        pickle.dump(winner, f)
+
+    # Демонстрация
+    print("\nЗапускаем демонстрацию лучшего пилота из команды...")
+    env_eval = gym.make('LunarLander-v3', render_mode='human')
+    winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
+    
+    for _ in range(3):
+        state, info = env_eval.reset()
+        done = False
+        truncated = False
+        total_reward = 0
+        
+        while not (done or truncated):
+            output = winner_net.activate(state)
+            action = np.argmax(output)
+            state, reward, done, truncated, info = env_eval.step(action)
+            total_reward += reward
+            
+        print(f"Результат демонстрационной посадки: {total_reward:.1f} очков")
+        
+    env_eval.close()
+```
+
+### Как это работает:
+1. `pe.evaluate(genomes, config)` берет всех 150 агентов из поколения, раскидывает их по ядрам процессора и играет каждым по 3 игры (как мы сделали раньше).
+2. Как только все 150 агентов оценены, выполняется генератор списков (list comprehension): мы пробегаем по всем 150 результатам и забираем тех, у кого оценка `>= 200`.
+3. Если длина этого списка `>= 3`, мы кричим интерпретатору Python: `"StopIteration!"`. Это мгновенно обрывает внутренний цикл `neat-python`, не дожидаясь 200-го поколения.
+4. В блоке `except StopIteration` мы мягко ловим этот крик, сортируем победителей и забираем абсолютного чемпиона на демонстрацию. 
+
+Теперь алгоритм будет обучаться до тех пор, пока решение не станет стабильным для значительной части популяции!
+
+multiprocessing.pool.RemoteTraceback:
+"""
+Traceback (most recent call last):
+File "/home/isn0v/.local/share/uv/python/cpython-3.14.0-linux-x86_64-gnu/lib/python3.14/multiprocessing/pool.py", line 125, in worker
+result = (True, func(*args, **kwds))
+~~~~^^^^^^^^^^^^^^^
+File "/home/isn0v/git/diploma-research/neat/lunar-lander/model.py", line 14, in eval_genomes
+for genome_id, genome in genomes:
+^^^^^^^
+TypeError: 'DefaultGenome' object is not iterable
+"""
+
+Ага, это очень частая ошибка при переходе на многопоточность в `neat-python`!
+
+### Почему это произошло?
+Когда мы обучали агентов в один поток, функция `p.run(eval_genomes)` передавала внутрь **весь список** из 150 агентов сразу. Поэтому внутри `eval_genomes` у нас стоял цикл `for genome_id, genome in genomes:`.
+
+Но когда мы включили `ParallelEvaluator`, алгоритм начал сам разбивать популяцию. Он берет **одного** агента и отправляет его на свободное ядро процессора. То есть в функцию попадает не список агентов, а одиночный объект `DefaultGenome`.
+Твой код попытался запустить цикл `for` по одному мозгу (как будто это список), и Python выдал ошибку `TypeError: 'DefaultGenome' object is not iterable`.
+
+---
+
+### Как исправить
+
+Нам нужно разделить логику. 
+1. Написать функцию, которая оценивает **строго одного агента** (без цикла `for`) и возвращает его очки.
+2. Передать эту функцию в `ParallelEvaluator`.
+
+Вот **полностью исправленный и готовый к работе код** (начиная со строк после конфига). Просто замени всё, что у тебя ниже переменной `CONFIG_TEXT`:
+
+```python
+import gymnasium as gym
+import neat
+import numpy as np
+import pickle
+
+# ... (здесь твой CONFIG_TEXT) ...
+
+def create_config_file(filename="config-lunar.txt"):
+    with open(filename, "w") as f:
+        f.write(CONFIG_TEXT)
+    return filename
+
+# 1. ФУНКЦИЯ ДЛЯ ОДНОГО ГЕНОМА (Её будут вызывать ядра процессора)
+def eval_single_genome(genome, config):
+    """Оценивает одного пилота 3 раза и возвращает средний балл"""
+    env = gym.make('LunarLander-v3')
+    net = neat.nn.FeedForwardNetwork.create(genome, config)
+    
+    episodes = 3
+    total_fitness = 0.0
+    
+    for _ in range(episodes):
+        state, info = env.reset()
+        done = False
+        truncated = False
+        episode_fitness = 0.0
+        
+        while not (done or truncated):
+            output = net.activate(state)
+            action = np.argmax(output) 
+            state, reward, done, truncated, info = env.step(action)
+            episode_fitness += reward
+            
+        total_fitness += episode_fitness
+        
+    env.close()
+    
+    # ВАЖНО: При многопоточности функция должна ВОЗВРАЩАТЬ число!
+    return total_fitness / episodes 
+
+
+# 2. ОСНОВНОЙ ЦИКЛ ОБУЧЕНИЯ
+def run_neat():
+    config_path = create_config_file()
+    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         config_path)
+    
+    p = neat.Population(config)
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+
+    print("Начинаем тренировку пилотов (Многопоточность ВКЛЮЧЕНА)...")
+    
+    # Создаем многопоточный оценщик. Передаем ему функцию для ОДНОГО генома.
+    # Число 4 - это количество процессов (можешь поставить 8, если процессор мощный)
+    pe = neat.ParallelEvaluator(4, eval_single_genome)
+    
+    champions_list = []
+
+    # Наш собственный контроллер поколений
+    def evaluate_and_check(genomes, config):
+        # pe.evaluate сам раскидает одиночные геномы по ядрам и соберет их оценки
+        pe.evaluate(genomes, config)
+        
+        # Проверяем, есть ли 3 гения с оценкой >= 200
+        current_champions = [g for genome_id, g in genomes if g.fitness is not None and g.fitness >= 200]
+        
+        if len(current_champions) >= 3:
+            nonlocal champions_list
+            champions_list = current_champions
+            raise StopIteration(f"Успех! Найдено {len(current_champions)} пилотов-профи.")
+
+    # Запускаем эволюцию (максимум 200 поколений)
+    try:
+        p.run(evaluate_and_check, 200)
+    except StopIteration as e:
+        print(f"\n[Эволюция успешно завершена]: {e}")
+
+    # Подводим итоги
+    if champions_list:
+        champions_list.sort(key=lambda x: x.fitness, reverse=True)
+        winner = champions_list[0]
+        print(f"\nЛучший из команды победителей набрал: {winner.fitness:.1f} очков!")
+    else:
+        print("\nЗа 200 поколений не удалось найти 3-х идеальных пилотов.")
+        winner = p.best_genome 
+
+    if winner is not None:
+        with open("best_lunar_pilot.pkl", "wb") as f:
+            pickle.dump(winner, f)
+
+        print("\nЗапускаем демонстрацию лучшего пилота...")
+        env_eval = gym.make('LunarLander-v3', render_mode='human')
+        winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
+        
+        for i in range(3):
+            state, info = env_eval.reset()
+            done = False
+            truncated = False
+            total_reward = 0
+            
+            while not (done or truncated):
+                output = winner_net.activate(state)
+                action = np.argmax(output)
+                state, reward, done, truncated, info = env_eval.step(action)
+                total_reward += reward
+                
+            print(f"Посадка {i+1}: {total_reward:.1f} очков")
+            
+        env_eval.close()
+
+if __name__ == '__main__':
+    # Обязательная строка для мультипроцессинга на Windows/некоторых Linux!
+    import multiprocessing
+    multiprocessing.freeze_support() 
+    run_neat()
+```
+
+### Что конкретно поменялось:
+1. Мы удалили старую функцию `eval_genomes` (ту, которая с циклом `for`) и написали вместо нее `eval_single_genome`.
+2. Самое главное правило: в многопоточном режиме функция оценки больше не сохраняет результат в `genome.fitness = ...`. Она просто **возвращает `float`** через `return`. А уже сам `ParallelEvaluator` ловит это число и присваивает нужному агенту.
+3. Добавлено `multiprocessing.freeze_support()` в самый низ скрипта — это стандартная защита Python от зависания процессов при запуске многопоточности.
+
+Теперь всё должно взлететь, причем очень быстро (благодаря многопоточности)!
+
+  code
+Code
+download
+content_copy
+expand_less
+raise RuntimeError(
+...<4 lines>...
+)
+
+RuntimeError: Configuration conflict: population size 150 is less than num_species * min_species_size 300 (150 * 2). Cannot satisfy per-species minima.
+
+О, это прекрасная ошибка! Она означает, что мы сделали мозг агентов настолько сложным при рождении, что **эволюция сошла с ума от разнообразия**.
+
+### Что именно произошло (математика ошибки):
+Помнишь, мы добавили `num_hidden = 4`? Теперь каждый из 150 агентов рождается с уникальным, довольно большим переплетением нейронов. 
+Алгоритм NEAT измеряет "генетическое расстояние" между ними. У нас в конфиге стоит строгое правило: `compatibility_threshold = 3.0`.
+Из-за новых извилин разница между всеми 150 агентами стала больше, чем 3.0. Поэтому алгоритм сказал: *"Ого, вы все абсолютно разные животные!"* — и **создал 150 разных видов для 150 агентов**.
+
+А дальше сломалась математика:
+У алгоритма есть правило `min_species_size = 2` (каждый вид должен оставить минимум 2 потомка, чтобы не вымереть сразу).
+150 видов × 2 потомка = **300 детей**. 
+А размер популяции у нас жестко ограничен: `pop_size = 150`. Питон понял, что не может впихнуть 300 детей в 150 мест, и выбросил `RuntimeError`.
+
+---
+
+### Как это исправить?
+
+Нам нужно просто **сделать алгоритм более терпимым к разнице в генах**, чтобы он объединял пилотов в группы (виды) по 20-30 штук, а не дробил их по одному. И заодно разрешить видам временно состоять из 1 особи.
+
+Найди в своем `CONFIG_TEXT` эти две секции в самом низу и замени их:
+
+```python
+[DefaultSpeciesSet]
+# БЫЛО 3.0. Делаем порог выше! Теперь агентам проще считаться "родственниками"
+compatibility_threshold = 5.0
+
+[DefaultStagnation]
+species_fitness_func = max
+max_stagnation       = 30
+species_elitism      = 3
+
+[DefaultReproduction]
+elitism            = 2
+survival_threshold = 0.2
+# БЫЛО 2. Ставим 1, чтобы алгоритм никогда больше не падал от нехватки мест
+min_species_size   = 1
+```
+
+### Что изменится после этого фикса:
+Когда ты запустишь код, обрати внимание на строчку в консоли:
+`Population of 150 members in X species`
+Раньше там X стремилось к 150. С порогом `5.0` видов станет нормальное количество (от 5 до 15). Они будут конкурировать друг с другом группами, как и задумано в NEAT, и ошибка больше никогда не появится!
+
