@@ -7,7 +7,7 @@ import os
 # --- Настройки ---
 CONFIG_PATH = 'neat/cart-pole/neat.cfg'
 WINNER_PATH = 'neat/cart-pole/results/best_agent.pkl'
-EPISODES = 1000
+EPISODES = 100
 
 def evaluate_model(env, net, episodes, noise_std=0.0):
     """Прогон модели в среде с возможностью добавления шума"""
