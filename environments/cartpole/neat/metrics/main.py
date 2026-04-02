@@ -134,7 +134,7 @@ def main():
     # ---------------------------------------------------------
     # Определение 2.4: Робастность
     # ---------------------------------------------------------
-    R_noisy_array = evaluate_agent(env, net, EPISODES, noise_std=0.05)
+    R_noisy_array = evaluate_agent(env, net, EPISODES, noise_std=0.1)
     R_noisy_mean = np.mean(R_noisy_array)
     
     robustness_noise = ((R_mean - R_noisy_mean) / R_mean) * 100 if R_mean != 0 else 0
