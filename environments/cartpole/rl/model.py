@@ -1,3 +1,6 @@
+import os
+import time
+
 import gymnasium as gym
 import torch
 import torch.nn as nn
@@ -5,6 +8,8 @@ import torch.optim as optim
 import numpy as np
 import random
 from collections import deque
+
+PATH = os.path.dirname(os.path.abspath(__file__))
 
 # 1. Создаем саму нейронную сеть
 class QNetwork(nn.Module):
@@ -102,8 +107,8 @@ def main():
     action_dim = env.action_space.n            # 2 действия (влево, вправо)
     
     agent = DQNAgent(state_dim, action_dim)
-    episodes = 500
-
+    episodes = 1000
+    start_time = time.time()
     for episode in range(episodes):
         state, info = env.reset()
         total_reward = 0
@@ -129,10 +134,18 @@ def main():
         # Среда считается решенной, если агент удерживает шест 500 шагов
         if total_reward >= 500:
             print(f"Среда успешно решена за {episode + 1} эпизодов!")
+            
+            # --- НОВЫЙ БЛОК: СОХРАНЕНИЕ ВЕСОВ ---
+            save_path = f"{PATH}/results/dqn_cartpole_winner.pth"
+            torch.save(agent.model.state_dict(), save_path)
+            print(f"[INFO] Модель успешно сохранена в файл: {save_path}")
+            # ------------------------------------
+            
             break
 
     env.close()
-    
+    end_time = time.time()
+    print(f"Общее время обучения: {end_time - start_time:.2f} секунд")
     # 4. Демонстрация обученного агента
     print("Запускаем демонстрацию...")
     env_eval = gym.make('CartPole-v1', render_mode='human')
